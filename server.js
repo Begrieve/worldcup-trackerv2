@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v29 · 2026-06-14 (full-tournament backfill)";
+const VERSION = "v31 · 2026-06-14 (match-data golden boot)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -734,7 +734,7 @@ async function apifcRefresh(fromDate, toDate){
   }
   if (changed) saveResults(results);
   saveBadges();
-  apifcStatus.covered=covered; apifcStatus.ok=true; apifcStatus.lastFetch=new Date().toISOString();
+  apifcStatus.covered=covered; apifcStatus.totalResults=Object.keys(results).length; apifcStatus.ok=true; apifcStatus.lastFetch=new Date().toISOString();
 }
 async function apifcLoop(){
   if (!APIFC_KEY || apifcStatus.blocked) return;
@@ -780,6 +780,8 @@ async function apifcTopScorers(){
         matches: null
       };
     }).filter(s => s.name !== "Unknown");
+    // Rank by the Golden Boot tiebreakers: goals, then assists (provider order isn't reliable).
+    list.sort((a,b)=> b.goals - a.goals || ((b.assists||0) - (a.assists||0)));
     if (list.length){ scorers = list; apifcScorersOwned = true; }   // becomes the Golden Boot leaderboard
     apifcTopDebug = { lastFetch: new Date().toISOString(), count: list.length, sample: j.slice(0,3), error: null };
   } catch(e){ apifcTopDebug.error = String(e.message || e).slice(0,200); }
@@ -1584,6 +1586,23 @@ function updateStatsChip(){
   else ss.innerHTML='<span class="statschip warn">● API-Football connected, no World Cup data yet'+(af.error?' \u2014 '+esc(af.error):'')+'</span>';
 }
 
+function scorerRoster(){
+  const r={}; const ex=STATE.matchExtra||{};
+  const byId={}; (STATE.matches||[]).forEach(m=>byId[m.id]=m);
+  for(const id in ex){ const e=ex[id], m=byId[id]; if(!e.lineups||!m) continue;
+    [["home",m.home],["away",m.away]].forEach(function(pair){
+      const lu=e.lineups[pair[0]]; if(!lu) return;
+      const names=(lu.pitch&&lu.pitch.length)?lu.pitch.map(p=>p.n):(lu.xi||[]);
+      r[pair[1]]=r[pair[1]]||[]; names.forEach(n=>{ if(n && r[pair[1]].indexOf(n)<0) r[pair[1]].push(n); });
+    });
+  }
+  return r;
+}
+function prettyName(abbrev, team, roster){
+  const cand=roster[team]||[]; let best=abbrev, sc=0;
+  for(const full of cand){ const s=mcMatchScore(abbrev, full); if(s>sc){ sc=s; best=full; } }
+  return sc>=4 ? best : abbrev;   // upgrade "L. Messi" -> "Lionel Messi" when we can match it
+}
 function statAgg(){
   const goals={}, assists={}, cards={};
   const ex=STATE.matchExtra||{};
@@ -1615,24 +1634,34 @@ function renderScorers(){
   const seg='<div class="seg">'+tabs.map(t=>'<button data-stat="'+t[0]+'" class="'+(STAT_VIEW===t[0]?"active":"")+'">'+t[1]+'</button>').join("")+'</div>';
   let body='';
   if(STAT_VIEW==="goals"){
-    let list = (STATE.scorers&&STATE.scorers.length) ? STATE.scorers.map(s=>({name:s.name,team:s.team,flag:s.flag,v:s.goals,assists:s.assists,matches:s.matches})) : null;
-    if(!list){ const g=statAgg().goals; list=Object.values(g).sort((a,b)=>b.v-a.v).map(x=>({name:x.name,team:x.team,v:x.v})); }
+    // Count goals from the actual match events (complete for the whole tournament after backfill),
+    // not the provider's stage-limited top-scorers endpoint.
+    const agg=statAgg();
+    let list=Object.values(agg.goals).map(g=>{ const a=agg.assists[g.name+"|"+g.team]; return {name:g.name,team:g.team,v:g.v,assists:a?a.v:0}; });
+    if(list.length){
+      const roster=scorerRoster();
+      list.forEach(s=>{ s.name=prettyName(s.name,s.team,roster); });
+      list.sort((a,b)=> b.v-a.v || b.assists-a.assists);
+    } else if(STATE.scorers&&STATE.scorers.length){   // fallback before match data has loaded
+      list=STATE.scorers.map(s=>({name:s.name,team:s.team,v:s.goals,assists:s.assists||0}));
+    }
     body = list.length ? list.slice(0,30).map((s,i)=> scRow(i+1,
-      crest(s.team), s.name,
-      s.team+(s.matches!=null?' · '+s.matches+' apps':''),
-      (s.assists!=null?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
+      crest(s.team), s.name, s.team,
+      (s.assists?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
       '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>')).join("")
       : emptyStat("No goals yet","The Golden Boot race will fill in here as goals go in.");
   } else if(STAT_VIEW==="assists"){
-    const a=statAgg().assists; const list=Object.values(a).sort((x,y)=>y.v-x.v);
+    const agg=statAgg(); const roster=scorerRoster();
+    const list=Object.values(agg.assists).map(a=>({name:prettyName(a.name,a.team,roster),team:a.team,v:a.v})).sort((x,y)=>y.v-x.v);
     body = list.length ? list.slice(0,30).map((s,i)=> scRow(i+1,
       crest(s.team), s.name, s.team,
       '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Assists</div></div>')).join("")
       : emptyStat("No assists recorded yet","Assist data appears as goals with a provider are logged.");
   } else if(STAT_VIEW==="cards"){
-    const c=statAgg().cards; const list=Object.values(c).sort((x,y)=> y.r-x.r || y.y-x.y || (y.r*2+y.y)-(x.r*2+x.y));
+    const c=statAgg().cards; const roster=scorerRoster();
+    const list=Object.values(c).sort((x,y)=> y.r-x.r || y.y-x.y || (y.r*2+y.y)-(x.r*2+x.y));
     body = list.length ? list.slice(0,40).map((s,i)=> scRow(i+1,
-      crest(s.team), s.name, s.team,
+      crest(s.team), prettyName(s.name,s.team,roster), s.team,
       '<div class="stat sub"><div class="v">'+s.y+'</div><div class="k">🟨</div></div>'+
       '<div class="stat"><div class="v">'+s.r+'</div><div class="k">🟥</div></div>')).join("")
       : emptyStat("No cards yet","Bookings and dismissals will be tallied here.");
