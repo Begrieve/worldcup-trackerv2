@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v27 · 2026-06-14 (scorer crests + name fixes)";
+const VERSION = "v28 · 2026-06-14 (single scorer source)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -120,6 +120,7 @@ let apifcCovered = new Set();   // matches apifootball.com is authoritatively dr
 let apifcStatus = { enabled: !!APIFC_KEY, ok: null, error: null, leagueId: null, covered: 0, lastFetch: null, blocked: false };
 let apifcDebug = {};
 let apifcTopDebug = { lastFetch: null, count: 0, sample: null, error: null };
+let apifcScorersOwned = false;   // once apifootball.com supplies the Golden Boot, it's the single source
 
 // ---- Results store ---------------------------------------------------------
 // Shape: { "M01": { home: 2, away: 1 }, ... }  (only finished/known matches)
@@ -387,6 +388,7 @@ async function refreshLive() {
 async function refreshScorers() {
   const token = API_TOKEN;
   if (!token || afScorersActive) return;
+  if (apifcScorersOwned) return;   // apifootball.com is the authoritative Golden Boot source
   try {
     const res = await fetch("https://api.football-data.org/v4/competitions/WC/scorers?limit=30", {
       headers: { "X-Auth-Token": token }
@@ -473,6 +475,7 @@ async function afRefreshDetails(ids){
 // Richer top scorers (goals + assists) from API-Football.
 async function afTopScorers(){
   if (!AF_KEY || afBlocked) return;
+  if (apifcScorersOwned) return;   // apifootball.com is the authoritative source
   try {
     const j = await afFetch(`/players/topscorers?league=${AF_LEAGUE}&season=${AF_SEASON}`);
     const arr = j.response || [];
@@ -763,7 +766,7 @@ async function apifcTopScorers(){
         matches: null
       };
     }).filter(s => s.name !== "Unknown");
-    if (list.length){ scorers = list; }                      // becomes the Golden Boot leaderboard
+    if (list.length){ scorers = list; apifcScorersOwned = true; }   // becomes the Golden Boot leaderboard
     apifcTopDebug = { lastFetch: new Date().toISOString(), count: list.length, sample: j.slice(0,3), error: null };
   } catch(e){ apifcTopDebug.error = String(e.message || e).slice(0,200); }
 }
