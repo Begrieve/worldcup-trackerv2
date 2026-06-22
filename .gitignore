@@ -1,0 +1,10 @@
+# Never upload secrets or local runtime data to GitHub:
+token*.txt
+pin.txt
+results.json
+matchextra.json
+badges.json
+node_modules/
+*.bat
+*.log
+.DS_Store

@@ -1,0 +1,16 @@
+# Optional convenience: if you deploy via Render "Blueprint", this pre-fills the settings.
+services:
+  - type: web
+    name: worldcup-2026-tracker
+    runtime: node
+    plan: free
+    startCommand: node server.js
+    envVars:
+      - key: TSDB_KEY
+        value: "123"
+      - key: APIFOOTBALLCOM_KEY   # your apifootball.com key (leave unset to use free feeds only)
+        sync: false
+      - key: WC_API_TOKEN          # optional football-data.org token
+        sync: false
+      - key: WC_PIN                # set this to edit scores from your phone
+        sync: false

@@ -1,0 +1,13 @@
+{
+  "name": "worldcup-2026-tracker",
+  "version": "25.0.0",
+  "private": true,
+  "description": "2026 FIFA World Cup live group-stage tracker — zero-dependency Node server.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
