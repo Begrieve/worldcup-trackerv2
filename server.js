@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v28 · 2026-06-14 (single scorer source)";
+const VERSION = "v29 · 2026-06-14 (full-tournament backfill)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -668,11 +668,12 @@ function apifcLiveOf(ev){
   if (ev.match_live==="1" || /^\d+/.test(st)) return { status:"IN_PLAY", minute:(/^\d+/.test(st)?parseInt(st):null) };
   return null;
 }
-async function apifcRefresh(){
+async function apifcRefresh(fromDate, toDate){
   if (!APIFC_KEY || apifcStatus.blocked) return;
   if (!apifcLeagueId){ await apifcDiscoverLeague(); if (!apifcLeagueId) return; }
   const d=x=>new Date(x).toISOString().slice(0,10);
-  const from=d(Date.now()-86400000), to=d(Date.now()+86400000);
+  const from = fromDate || d(Date.now()-86400000);
+  const to   = toDate   || d(Date.now()+86400000);
   const j = await apifcFetch("action=get_events&from="+from+"&to="+to+"&league_id="+apifcLeagueId);
   if (!Array.isArray(j)) return;
   apifcDebug.sample = j.slice(0,1);
@@ -743,6 +744,19 @@ async function apifcLoop(){
   setTimeout(apifcLoop, anyLive ? 60*1000 : 5*60*1000);
 }
 
+// Pull the WHOLE tournament once (and periodically) so a fresh server (e.g. a cloud
+// host with no saved results.json) shows full standings, not just the last few days.
+const SEASON_FROM = (function(){ const ds=MATCHES.map(m=>m.date).filter(Boolean).sort(); return ds[0] || "2026-06-11"; })();
+const SEASON_TO   = (function(){ const ds=MATCHES.map(m=>m.date).filter(Boolean).sort(); const last=ds[ds.length-1] || "2026-07-19";
+  return new Date(new Date(last).getTime()+2*86400000).toISOString().slice(0,10); })();
+async function apifcBackfill(){
+  if (!APIFC_KEY || apifcStatus.blocked) return;
+  try {
+    await apifcRefresh(SEASON_FROM, SEASON_TO); apifcStatus.backfilled = true;
+    console.log("[apifootball.com] full-tournament sync ("+SEASON_FROM+" → "+SEASON_TO+"): "+Object.keys(results).length+" results on record");
+  } catch(e){ apifcStatus.error = e.message; }
+}
+
 // Dedicated, complete Golden Boot list straight from apifootball.com (includes assists when provided).
 async function apifcTopScorers(){
   if (!APIFC_KEY || apifcStatus.blocked) return;
@@ -799,7 +813,12 @@ if (TSDB_KEY) {
 }
 
 if (APIFC_KEY) {
-  apifcDiscoverLeague().then(()=>{ apifcLoop(); apifcTopScorers(); });
+  apifcDiscoverLeague().then(async ()=>{
+    await apifcBackfill();      // whole tournament first, so standings are complete on a fresh server
+    apifcLoop();                // then keep the live window fresh
+    apifcTopScorers();
+  });
+  setInterval(apifcBackfill, 30*60*1000);     // re-sync the full table every 30 min
   setInterval(apifcTopScorers, 10*60*1000);   // refresh the Golden Boot every 10 min
 }
 
