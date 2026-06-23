@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v31 · 2026-06-14 (match-data golden boot)";
+const VERSION = "v32 · 2026-06-14 (golden boot leader)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -1247,6 +1247,10 @@ const PAGE = String.raw`<!DOCTYPE html>
   .sc-row .who{flex:1;min-width:0}
   .sc-row .who .nm{font-weight:800;font-size:15px}
   .sc-row .who .tm{font-size:12px;color:var(--muted)}
+  .gb{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;
+    letter-spacing:.03em;vertical-align:middle;white-space:nowrap;
+    color:#1a1206;background:linear-gradient(90deg,var(--gold),#ffe39a);border:1px solid color-mix(in srgb,var(--gold) 60%,#000)}
+  .gbnote{font-size:11.5px;color:var(--muted);margin:0 2px 10px;display:flex;gap:6px;align-items:center}
   .sc-row .stat{font-family:"Oswald";text-align:center;flex:none}
   .sc-row .stat .v{font-size:22px;font-weight:700;color:var(--pitch);line-height:1}
   .sc-row .stat .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
@@ -1624,9 +1628,9 @@ function cleanSheets(){
   });
   return Object.keys(cs).map(t=>({team:t,v:cs[t]})).sort((a,b)=>b.v-a.v||a.team.localeCompare(b.team));
 }
-function scRow(rank, flagHtml, name, sub, statHtml){
+function scRow(rank, flagHtml, name, sub, statHtml, badge){
   return '<div class="sc-row"><div class="rank">'+rank+'</div>'+flagHtml+
-    '<div class="who"><div class="nm">'+esc(name)+'</div><div class="tm">'+esc(sub)+'</div></div>'+statHtml+'</div>';
+    '<div class="who"><div class="nm">'+esc(name)+(badge||'')+'</div><div class="tm">'+esc(sub)+'</div></div>'+statHtml+'</div>';
 }
 function renderScorers(){
   const el = $("#scorers");
@@ -1645,10 +1649,18 @@ function renderScorers(){
     } else if(STATE.scorers&&STATE.scorers.length){   // fallback before match data has loaded
       list=STATE.scorers.map(s=>({name:s.name,team:s.team,v:s.goals,assists:s.assists||0}));
     }
-    body = list.length ? list.slice(0,30).map((s,i)=> scRow(i+1,
-      crest(s.team), s.name, s.team,
-      (s.assists?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
-      '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>')).join("")
+    body = list.length ? (function(){
+      const top=list[0];
+      const tied=list.filter(s=> s.v===top.v && (s.assists||0)===(top.assists||0)).length;
+      const lbl = tied>1 ? '🥇 Golden Boot co-leader' : '🥇 Golden Boot leader';
+      const isLeader = s => s.v===top.v && (s.assists||0)===(top.assists||0) && top.v>0;
+      const note='<div class="gbnote">🥇 Current Golden Boot leader — updates live as goals go in (the award is decided at the final).</div>';
+      return note + list.slice(0,30).map((s,i)=> scRow(i+1,
+        crest(s.team), s.name, s.team,
+        (s.assists?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
+        '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>',
+        isLeader(s) ? '<span class="gb" title="Provisional — decided at the final">'+lbl+'</span>' : '')).join("");
+    })()
       : emptyStat("No goals yet","The Golden Boot race will fill in here as goals go in.");
   } else if(STAT_VIEW==="assists"){
     const agg=statAgg(); const roster=scorerRoster();
