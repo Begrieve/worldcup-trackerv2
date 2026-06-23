@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v32 · 2026-06-14 (golden boot leader)";
+const VERSION = "v38 · 2026-06-14 (narrow stats+fixtures, read-only scores, player/country search)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -946,7 +946,7 @@ server.listen(PORT, () => {
     console.log(`          Open that in your phone's browser, then use the browser`);
     console.log(`          menu → "Add to Home screen" to install it as an app.\n`);
   }
-  console.log(`      Live auto-update: ${API_TOKEN ? "ON" : "OFF (manual entry)"}`);
+  console.log(`      Live auto-update: ${API_TOKEN ? "ON" : "OFF (using free live feeds)"}`);
   console.log(`      Player stats (API-Football): ${AF_KEY ? "ON" : "OFF"}`);
   console.log(`      Goals & lineups (TheSportsDB): ${TSDB_KEY ? "ON (free)" : "OFF"}`);
   console.log(`      Real-time (apifootball.com): ${APIFC_KEY ? "ON" : "OFF"}`);
@@ -1202,20 +1202,23 @@ const PAGE = String.raw`<!DOCTYPE html>
   .fx .side.h{justify-content:flex-end;text-align:right}
   .fx .side .nm{font-weight:700;font-size:14px}
   .fx .fl{font-size:18px}
-  .fx .score{display:flex;align-items:center;gap:6px}
-  .fx .score input{width:42px;height:34px;text-align:center;font-family:"Oswald";font-size:18px;
-    font-weight:600;color:var(--ink);background:var(--bg2);border:1px solid var(--line2);border-radius:8px}
-  .fx .score input:focus{outline:none;border-color:var(--pitch);box-shadow:0 0 0 2px rgba(57,255,136,.18)}
+  .fx .score{display:flex;align-items:center;gap:8px}
+  .fx .score .scv{min-width:26px;text-align:center;font-family:"Oswald";font-size:20px;font-weight:600;color:var(--ink)}
+  .fx .score .scv.win{color:var(--pitch)}
   .fx .score .sep{color:var(--faint)}
   .fx .venue{font-size:11px;color:var(--faint);width:185px;flex:none;text-align:right}
   .fx .venue b{color:var(--muted);font-weight:600;display:block}
   .fx.played{border-color:var(--line2)}
   .fx.played .nm.win{color:var(--pitch)}
-  .fx .save{font-family:"Oswald";font-size:11px;letter-spacing:.08em;text-transform:uppercase;
-    border:1px solid var(--line2);background:transparent;color:var(--muted);border-radius:7px;
-    padding:7px 11px;cursor:pointer;transition:.15s}
-  .fx .save:hover{color:#06120b;background:var(--pitch);border-color:var(--pitch)}
-  .fx .save.saved{color:var(--pitch);border-color:var(--pitch)}
+  #scorers,#fixtures{max-width:640px;margin-left:auto;margin-right:auto}
+  .statSearch{position:relative;margin:0 0 14px}
+  .statSearch input{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);border-radius:10px;padding:11px 36px 11px 14px;font-size:14px;font-family:inherit;outline:none}
+  .statSearch input:focus{border-color:color-mix(in srgb,var(--ink) 32%,transparent)}
+  .statSearch input::placeholder{color:var(--faint)}
+  .ssClear{position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--faint);
+    font-size:20px;line-height:1;padding:2px 7px;border-radius:7px;user-select:none}
+  .ssClear:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 9%,transparent)}
 
   .filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
   .filter button{font-family:"Oswald";font-size:12px;letter-spacing:.08em;color:var(--muted);
@@ -1251,6 +1254,24 @@ const PAGE = String.raw`<!DOCTYPE html>
     letter-spacing:.03em;vertical-align:middle;white-space:nowrap;
     color:#1a1206;background:linear-gradient(90deg,var(--gold),#ffe39a);border:1px solid color-mix(in srgb,var(--gold) 60%,#000)}
   .gbnote{font-size:11.5px;color:var(--muted);margin:0 2px 10px;display:flex;gap:6px;align-items:center}
+  .sc-row.expandable{cursor:pointer}
+  .sc-row.expandable .who .nm::after{content:"›";display:inline-block;margin-left:7px;color:var(--muted);transform:rotate(90deg);transition:transform .15s;font-weight:700}
+  .sc-row.expandable.open .who .nm::after{transform:rotate(-90deg)}
+  .pdtl{margin:-2px 0 8px;padding:4px 6px 6px;display:flex;flex-direction:column;gap:4px}
+  .pdrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;background:var(--card2,rgba(255,255,255,.03));font-size:12.5px}
+  .pdrow .crest,.pdrow img{width:18px;height:18px}
+  .pdrow .pdopp{font-weight:600}
+  .pdrow .pdwhen{color:var(--muted);font-size:11px}
+  .pdrow .pdmin{margin-left:auto;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .pdrow .pdn{min-width:54px;text-align:right;font-weight:700;color:var(--gold)}
+  .pdrow .pen{display:inline-block;font-size:9px;font-weight:800;line-height:1;padding:2px 4px;border-radius:4px;
+    background:color-mix(in srgb,var(--c2,#39f) 30%,transparent);color:var(--text);vertical-align:middle;letter-spacing:.03em}
+  .bdg{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;line-height:1;
+    padding:2px 7px;border-radius:999px;vertical-align:middle;white-space:nowrap;margin-left:5px;
+    background:color-mix(in srgb,var(--ink,#fff) 9%,transparent);color:var(--muted);
+    border:1px solid color-mix(in srgb,var(--ink,#fff) 12%,transparent)}
+  .cbdg{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .cbdg .bdg{margin-left:0}
   .sc-row .stat{font-family:"Oswald";text-align:center;flex:none}
   .sc-row .stat .v{font-size:22px;font-weight:700;color:var(--pitch);line-height:1}
   .sc-row .stat .k{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
@@ -1432,7 +1453,7 @@ const PAGE = String.raw`<!DOCTYPE html>
 
 <script>
 const $ = s => document.querySelector(s);
-let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals";
+let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals", STAT_Q = "";
 
 let lastScores = {};   // matchId -> "h-a", to detect changes between polls
 let changedIds = {};   // ids whose score changed on the latest poll
@@ -1551,8 +1572,33 @@ function isToday(m){
   return Math.abs(ko.getTime() - now.getTime()) < 14*60*60*1000;
 }
 
+const OPEN = Object.create(null);
+function _luLabel(luval){ return /^st-/.test(luval) ? "Match stats" : "Lineups"; }
+function captureOpen(){
+  document.querySelectorAll("[data-okey]").forEach(function(el){
+    const k=el.dataset.okey; let open=false;
+    if(el.classList.contains("luPanel")) open = el.style.display!=="none";
+    else if(el.classList.contains("sc-item")){ const p=el.querySelector(".pdtl"); open = !!(p && !p.hidden); }
+    else if(el.tagName==="DETAILS") open = el.open;
+    if(open) OPEN[k]=1; else delete OPEN[k];
+  });
+}
+function restoreOpen(){
+  document.querySelectorAll("[data-okey]").forEach(function(el){
+    const k=el.dataset.okey, want=!!OPEN[k];
+    if(el.classList.contains("luPanel")){
+      el.style.display = want?"block":"none";
+      const luval=k.replace(/^lu-/,""), b=document.querySelector('[data-lu="'+luval+'"]');
+      if(b) b.textContent=_luLabel(luval)+(want?" ▴":" ▾");
+    } else if(el.classList.contains("sc-item")){
+      const p=el.querySelector(".pdtl"), row=el.querySelector(".sc-row");
+      if(p){ p.hidden=!want; if(row) row.classList.toggle("open",want); }
+    } else if(el.tagName==="DETAILS"){ el.open=want; }
+  });
+}
 function renderAll(){
   if(!STATE) return;
+  captureOpen();
   $("#m-stage").textContent = STATE.tournament.groupStage;
   $("#m-updated").textContent = fmtUpdated(STATE.updated);
   renderToday();
@@ -1574,6 +1620,7 @@ function renderAll(){
     : ''; 
     const u=$("#roUnlock"); if(u) u.onclick=(e)=>{ e.preventDefault(); unlockEditing(); };
   }
+  restoreOpen();
 }
 function updateStatsChip(){
   const ss = $("#statsStatus"); if(!ss) return;
@@ -1620,6 +1667,43 @@ function statAgg(){
   }
   return {goals,assists,cards};
 }
+// Which matches a player scored in, and how many — mirrors statAgg's goal rule so totals match.
+function playerGoalBreakdown(raw, team){
+  const ex=STATE.matchExtra||{}; const byId={}; (STATE.matches||[]).forEach(m=>byId[m.id]=m);
+  const out=[];
+  for(const id in ex){ const e=ex[id], mt=byId[id]; if(!mt) continue;
+    const gs=[];
+    (e.scorers||[]).forEach(g=>{
+      const og=/o\.?g\.?|own goal/i.test((g.name||"")+" "+(g.detail||""));
+      if(!og && g.name===raw && g.team===team) gs.push({ minute:g.minute||"", pen:/pen/i.test(g.detail||"") });
+    });
+    if(gs.length){
+      const home = mt.home===team;
+      out.push({ opp: home?mt.away:mt.home, home, n:gs.length, goals:gs, pens:gs.filter(x=>x.pen).length, date:mt.date });
+    }
+  }
+  out.sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  return out;
+}
+function bdgChips(list){ return (list||[]).map(b=>'<span class="bdg">'+b[0]+' '+esc(b[1])+'</span>').join(""); }
+function playerBadges(raw, team){
+  const bd=playerGoalBreakdown(raw, team); const out=[];
+  const maxG=bd.reduce((mx,g)=>Math.max(mx,g.n),0);
+  if(maxG>=3) out.push(["🎩","Hat-trick"]);
+  const pens=bd.reduce((a,g)=>a+g.pens,0);
+  if(pens>0) out.push(["🎯", pens+" pen"]);
+  return out;
+}
+function matchBadges(m){
+  const out=[]; if(matchPhase(m)!=="done") return out;
+  const r=m.result; if(!r) return out;
+  const ex=STATE.matchExtra && STATE.matchExtra[m.id];
+  const tot=(r.home||0)+(r.away||0);
+  if(tot>=4) out.push(["🎉","Thriller"]);
+  if(r.home!==r.away && (r.home===0||r.away===0)) out.push(["🧤","Clean sheet"]);
+  if(ex && ex.scorers && r.home!==r.away && ex.scorers.some(g=>/^90\+/.test((g.minute||"")))) out.push(["⏱️","Last-gasp"]);
+  return out;
+}
 function cleanSheets(){
   const cs={};
   (STATE.matches||[]).forEach(m=>{ if(!m.result) return;
@@ -1628,26 +1712,42 @@ function cleanSheets(){
   });
   return Object.keys(cs).map(t=>({team:t,v:cs[t]})).sort((a,b)=>b.v-a.v||a.team.localeCompare(b.team));
 }
+function teamCards(){
+  const t={}; const c=statAgg().cards;
+  Object.values(c).forEach(p=>{ const k=p.team||"—"; (t[k]=t[k]||{team:k,y:0,r:0}); t[k].y+=p.y; t[k].r+=p.r; });
+  // worst record first; reds weigh heavier than yellows
+  return Object.values(t).map(x=>({team:x.team,y:x.y,r:x.r,score:x.y + x.r*3}))
+    .filter(x=>x.y||x.r)
+    .sort((a,b)=> b.score-a.score || b.r-a.r || a.team.localeCompare(b.team));
+}
 function scRow(rank, flagHtml, name, sub, statHtml, badge){
-  return '<div class="sc-row"><div class="rank">'+rank+'</div>'+flagHtml+
+  return '<div class="sc-row" data-srch="'+esc((name+" "+sub).toLowerCase())+'"><div class="rank">'+rank+'</div>'+flagHtml+
     '<div class="who"><div class="nm">'+esc(name)+(badge||'')+'</div><div class="tm">'+esc(sub)+'</div></div>'+statHtml+'</div>';
+}
+function filterScorers(){
+  const q=(STAT_Q||"").toLowerCase().trim(); let shown=0;
+  document.querySelectorAll("#scorers .sc-row[data-srch]").forEach(function(r){
+    const unit=r.closest(".sc-item")||r, hit=!q || r.dataset.srch.indexOf(q)>=0;
+    unit.classList.toggle("hidden", !hit); if(hit) shown++;
+  });
+  const ne=document.getElementById("statNoMatch"); if(ne) ne.hidden = !(q && shown===0);
 }
 function renderScorers(){
   const el = $("#scorers");
-  const tabs=[["goals","Goals"],["assists","Assists"],["cards","Discipline"],["clean","Clean sheets"]];
+  const tabs=[["goals","Goals"],["assists","Assists"],["cards","Discipline"],["team","Team cards"],["clean","Clean sheets"]];
   const seg='<div class="seg">'+tabs.map(t=>'<button data-stat="'+t[0]+'" class="'+(STAT_VIEW===t[0]?"active":"")+'">'+t[1]+'</button>').join("")+'</div>';
   let body='';
   if(STAT_VIEW==="goals"){
     // Count goals from the actual match events (complete for the whole tournament after backfill),
     // not the provider's stage-limited top-scorers endpoint.
     const agg=statAgg();
-    let list=Object.values(agg.goals).map(g=>{ const a=agg.assists[g.name+"|"+g.team]; return {name:g.name,team:g.team,v:g.v,assists:a?a.v:0}; });
+    let list=Object.values(agg.goals).map(g=>{ const a=agg.assists[g.name+"|"+g.team]; return {name:g.name,raw:g.name,team:g.team,v:g.v,assists:a?a.v:0}; });
     if(list.length){
       const roster=scorerRoster();
-      list.forEach(s=>{ s.name=prettyName(s.name,s.team,roster); });
+      list.forEach(s=>{ s.name=prettyName(s.raw,s.team,roster); });
       list.sort((a,b)=> b.v-a.v || b.assists-a.assists);
     } else if(STATE.scorers&&STATE.scorers.length){   // fallback before match data has loaded
-      list=STATE.scorers.map(s=>({name:s.name,team:s.team,v:s.goals,assists:s.assists||0}));
+      list=STATE.scorers.map(s=>({name:s.name,raw:s.name,team:s.team,v:s.goals,assists:s.assists||0}));
     }
     body = list.length ? (function(){
       const top=list[0];
@@ -1655,11 +1755,25 @@ function renderScorers(){
       const lbl = tied>1 ? '🥇 Golden Boot co-leader' : '🥇 Golden Boot leader';
       const isLeader = s => s.v===top.v && (s.assists||0)===(top.assists||0) && top.v>0;
       const note='<div class="gbnote">🥇 Current Golden Boot leader — updates live as goals go in (the award is decided at the final).</div>';
-      return note + list.slice(0,30).map((s,i)=> scRow(i+1,
-        crest(s.team), s.name, s.team,
-        (s.assists?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
-        '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>',
-        isLeader(s) ? '<span class="gb" title="Provisional — decided at the final">'+lbl+'</span>' : '')).join("");
+      return note + list.slice(0,30).map((s,i)=>{
+        const bd = playerGoalBreakdown(s.raw, s.team);
+        const gbChip = isLeader(s) ? '<span class="gb" title="Provisional — decided at the final">'+lbl+'</span>' : '';
+        const row = scRow(i+1,
+          crest(s.team), s.name, s.team,
+          (s.assists?'<div class="stat sub"><div class="v">'+s.assists+'</div><div class="k">Ast</div></div>':'')+
+          '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>',
+          gbChip + bdgChips(playerBadges(s.raw, s.team)));
+        if(!bd.length) return '<div class="sc-item" data-okey="sc:'+esc(s.raw)+'|'+esc(s.team)+'">'+row+'</div>';
+        const detail = '<div class="pdtl" hidden>'+ bd.map(g=>
+          '<div class="pdrow">'+crest(g.opp)+
+            '<span class="pdopp">'+(g.home?'vs ':'@ ')+esc(g.opp)+'</span>'+
+            '<span class="pdwhen">'+(g.date?esc(g.date.slice(5)):'')+'</span>'+
+            '<span class="pdmin">'+g.goals.map(x=> esc(x.minute)+(x.pen?' <span class="pen">P</span>':'')).filter(Boolean).join(", ")+'</span>'+
+            '<span class="pdn">'+g.n+(g.n>1?' goals':' goal')+(g.pens?' · '+g.pens+' pen':'')+'</span>'+
+            (g.n>=3?'<span class="bdg">🎩 Hat-trick</span>':g.n===2?'<span class="bdg">⚽ Brace</span>':'')+
+          '</div>').join("") +'</div>';
+        return '<div class="sc-item" data-okey="sc:'+esc(s.raw)+'|'+esc(s.team)+'">'+row+detail+'</div>';
+      }).join("");
     })()
       : emptyStat("No goals yet","The Golden Boot race will fill in here as goals go in.");
   } else if(STAT_VIEW==="assists"){
@@ -1667,7 +1781,8 @@ function renderScorers(){
     const list=Object.values(agg.assists).map(a=>({name:prettyName(a.name,a.team,roster),team:a.team,v:a.v})).sort((x,y)=>y.v-x.v);
     body = list.length ? list.slice(0,30).map((s,i)=> scRow(i+1,
       crest(s.team), s.name, s.team,
-      '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Assists</div></div>')).join("")
+      '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Assists</div></div>',
+      (i===0 && s.v>0) ? '<span class="bdg">🅰️ Playmaker</span>' : '')).join("")
       : emptyStat("No assists recorded yet","Assist data appears as goals with a provider are logged.");
   } else if(STAT_VIEW==="cards"){
     const c=statAgg().cards; const roster=scorerRoster();
@@ -1677,6 +1792,13 @@ function renderScorers(){
       '<div class="stat sub"><div class="v">'+s.y+'</div><div class="k">🟨</div></div>'+
       '<div class="stat"><div class="v">'+s.r+'</div><div class="k">🟥</div></div>')).join("")
       : emptyStat("No cards yet","Bookings and dismissals will be tallied here.");
+  } else if(STAT_VIEW==="team"){
+    const list=teamCards();
+    body = list.length ? list.map((s,i)=> scRow(i+1,
+      crest(s.team), s.team, (s.y+s.r)+" total · "+s.r+" red"+(s.r===1?"":"s"),
+      '<div class="stat sub"><div class="v">'+s.y+'</div><div class="k">🟨</div></div>'+
+      '<div class="stat"><div class="v">'+s.r+'</div><div class="k">🟥</div></div>')).join("")
+      : emptyStat("No cards yet","Team bookings will be tallied here as matches are played.");
   } else { // clean sheets
     const list=cleanSheets();
     body = list.length ? list.map((s,i)=> scRow(i+1,
@@ -1684,8 +1806,26 @@ function renderScorers(){
       '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Clean</div></div>')).join("")
       : emptyStat("No clean sheets yet","A team earns one for each completed match without conceding.");
   }
-  el.innerHTML = seg + '<div class="scList">'+body+'</div>';
+  const prevFocused = document.activeElement && document.activeElement.id==="statSearch";
+  const prevCaret = prevFocused ? document.activeElement.selectionStart : null;
+  const search='<div class="statSearch"><input id="statSearch" type="text" autocomplete="off" spellcheck="false" '+
+    'placeholder="Search a player or country…" value="'+esc(STAT_Q)+'">'+
+    (STAT_Q?'<span class="ssClear" id="statClear" title="Clear">×</span>':'')+'</div>';
+  el.innerHTML = seg + search + '<div class="scList">'+body+'</div>'+
+    '<div id="statNoMatch" class="sc-empty" hidden><b>No matches</b>Nothing for that player or country — check the spelling, or try the country name.</div>';
   el.querySelectorAll(".seg button").forEach(b=> b.onclick=()=>{ STAT_VIEW=b.dataset.stat; renderScorers(); });
+  el.querySelectorAll(".sc-item").forEach(it=>{
+    const row=it.querySelector(".sc-row"), dtl=it.querySelector(".pdtl");
+    if(dtl){ row.classList.add("expandable"); row.onclick=()=>{ const open=dtl.hidden; dtl.hidden=!open; row.classList.toggle("open",open); }; }
+  });
+  const si=$("#statSearch");
+  if(si){
+    si.oninput=function(){ STAT_Q=this.value; const had=!!$("#statClear");
+      if((!!STAT_Q)!==had) renderScorers(); else filterScorers(); };
+    const sc=$("#statClear"); if(sc) sc.onclick=()=>{ STAT_Q=""; renderScorers(); };
+    if(prevFocused){ si.focus(); try{ si.setSelectionRange(prevCaret,prevCaret); }catch(e){} }
+  }
+  filterScorers();
 }
 function emptyStat(t,s){ return '<div class="sc-empty"><b>'+esc(t)+'</b>'+esc(s)+'</div>'; }
 
@@ -1710,7 +1850,7 @@ function cardExtras(m, ctx){
       ? '<div class="xi"><div class="xih">'+esc(team)+(lu.formation?' · '+esc(lu.formation):'')+'</div>'+
         lu.xi.map(function(n){return '<div>'+esc(n)+'</div>';}).join("")+'</div>' : ''; };
     html += '<button class="luBtn" data-lu="'+ctx+m.id+'">Lineups ▾</button>'+
-            '<div class="luPanel" id="lu-'+ctx+m.id+'" style="display:none">'+xi(lh,m.home)+xi(la,m.away)+'</div>';
+            '<div class="luPanel" id="lu-'+ctx+m.id+'" data-okey="lu-'+ctx+m.id+'" style="display:none">'+xi(lh,m.home)+xi(la,m.away)+'</div>';
   }
   if(ex.cards && ex.cards.length){
     html += '<div class="cards">'+ex.cards.map(function(c){
@@ -1720,7 +1860,7 @@ function cardExtras(m, ctx){
   }
   if(ex.stats && ex.stats.length){
     html += '<button class="luBtn" data-lu="st-'+ctx+m.id+'">Match stats ▾</button>'+
-            '<div class="luPanel statPanel" id="lu-st-'+ctx+m.id+'" style="display:none">'+
+            '<div class="luPanel statPanel" id="lu-st-'+ctx+m.id+'" data-okey="lu-st-'+ctx+m.id+'" style="display:none">'+
               '<div class="statHd"><span>'+esc(m.home)+'</span><span></span><span>'+esc(m.away)+'</span></div>'+
               ex.stats.map(function(s){
                 return '<div class="statRow"><span>'+esc(s.home)+'</span><span class="stT">'+esc(s.type)+'</span><span>'+esc(s.away)+'</span></div>';
@@ -1772,6 +1912,7 @@ function renderToday(){
         '<div class="row"><span class="tnm2">'+crest(m.home)+m.home+'</span>'+sc+'</div>'+
         '<div class="vs">vs</div>'+
         '<div class="row"><span class="tnm2">'+crest(m.away)+m.away+'</span>'+sa+'</div>'+
+        (function(){ const mb=matchBadges(m); return mb.length?'<div class="cbdg">'+bdgChips(mb)+'</div>':''; })()+
         cardExtras(m)+
       '</div>';
       }catch(e){ return ''; }
@@ -1785,6 +1926,9 @@ function renderGroups(){
     const rows = STATE.standings[g];
     const total = STATE.matches.filter(m=>m.group===g).length;
     const played = STATE.matches.filter(m=>m.group===g && m.result).length;
+    const groupComplete = total>0 && played===total;
+    const maxGF = rows.length ? Math.max.apply(null, rows.map(r=>r.GF)) : 0;
+    const minGA = rows.length ? Math.min.apply(null, rows.map(r=>r.GA)) : 0;
     const el = document.createElement("div");
     el.className="group"; el.style.setProperty("--acc",ACC[gi%6]);
     el.innerHTML =
@@ -1799,6 +1943,12 @@ function renderGroups(){
               crest(r.team)+'<span class="tnm">'+r.team+'</span>'+
               (r.qual==="in"?'<span class="qtag qin" title="Qualified for the Round of 32">Q</span>'
                :r.qual==="out"?'<span class="qtag qout" title="Eliminated — cannot reach the Round of 32">OUT</span>':'')+
+              (function(){ const tb=[];
+                if(groupComplete && r.pos===1) tb.push(["👑","Group winner"]);
+                if(r.W===3) tb.push(["💯","Perfect run"]);
+                if(groupComplete && r.GF===maxGF && r.GF>0) tb.push(["🔥","Best attack"]);
+                if(groupComplete && r.GA===minGA) tb.push(["🧱","Wall"]);
+                return bdgChips(tb); })()+
             '</div></td>'+
             '<td>'+r.P+'</td><td>'+r.W+'</td><td>'+r.D+'</td><td>'+r.L+'</td>'+
             '<td>'+r.GF+'</td><td>'+r.GA+'</td><td>'+(r.GD>0?"+":"")+r.GD+'</td>'+
@@ -1809,7 +1959,7 @@ function renderGroups(){
       (function(){
         const alive = rows.filter(r=>r.qual!=="in" && r.qual!=="out" && r.scenario);
         if(played===0 || !alive.length) return "";
-        return '<details class="scen"><summary>What needs to happen</summary>'+
+        return '<details class="scen" data-okey="scen:'+g+'"><summary>What needs to happen</summary>'+
           rows.filter(r=>r.scenario).map(r=>
             '<div class="scrow"><span class="sicon '+(r.qual||"")+'">'+
               (r.qual==="in"?"✓":r.qual==="out"?"✗":"•")+'</span>'+
@@ -1835,9 +1985,6 @@ function renderFixtures(){
     });
     fb.dataset.built="1";
   }
-  const focus = document.activeElement;
-  const focusId = focus && focus.dataset ? focus.dataset.fid : null;
-
   const matches = STATE.matches.filter(m=>GROUP_FILTER==="ALL"||m.group===GROUP_FILTER);
   const byDay = {};
   for(const m of matches){ (byDay[m.date]=byDay[m.date]||[]).push(m); }
@@ -1858,29 +2005,19 @@ function renderFixtures(){
           '<div class="match">'+
             '<div class="side h"><span class="nm '+(hw?"win":"")+'">'+m.home+'</span>'+crest(m.home)+'</div>'+
             '<div class="score">'+
-              '<input type="number" min="0" data-fid="'+m.id+'" data-sd="home" value="'+(r?r.home:"")+'" placeholder="–"'+(STATE.readOnly?' disabled':'')+'>'+
+              '<span class="scv '+(hw?"win":"")+'">'+(r?r.home:"–")+'</span>'+
               '<span class="sep">:</span>'+
-              '<input type="number" min="0" data-fid="'+m.id+'" data-sd="away" value="'+(r?r.away:"")+'" placeholder="–"'+(STATE.readOnly?' disabled':'')+'>'+
+              '<span class="scv '+(aw?"win":"")+'">'+(r?r.away:"–")+'</span>'+
             '</div>'+
             '<div class="side a">'+crest(m.away)+'<span class="nm '+(aw?"win":"")+'">'+m.away+'</span></div>'+
           '</div>'+
-          (STATE.readOnly?'':'<button class="save" data-save="'+m.id+'">Save</button>')+
           '<div class="venue"><b>'+m.stadium+'</b>'+m.city+'</div>'+
+          (function(){ const mb=matchBadges(m); return mb.length?'<div class="cbdg">'+bdgChips(mb)+'</div>':''; })()+
           fxxHtml+
         '</div>';
       }).join("")+'</div>';
   }).join("");
   $("#fixtures").innerHTML = out;
-
-  $("#fixtures").querySelectorAll("[data-save]").forEach(btn=>{
-    btn.onclick = ()=>saveMatch(btn.dataset.save, btn);
-  });
-  $("#fixtures").querySelectorAll("input[data-fid]").forEach(inp=>{
-    inp.addEventListener("keydown", e=>{ if(e.key==="Enter"){
-      const b = $('[data-save="'+inp.dataset.fid+'"]'); saveMatch(inp.dataset.fid, b);
-    }});
-  });
-  if(focusId){ const el=$('input[data-fid="'+focusId+'"][data-sd="'+(focus.dataset.sd)+'"]'); if(el){el.focus();} }
 }
 
 const FLAGCACHE = {};
@@ -2195,7 +2332,9 @@ document.addEventListener("click",function(e){
   const b = e.target.closest && e.target.closest("[data-lu]");
   if(!b) return;
   const p = document.getElementById("lu-"+b.dataset.lu);
-  if(p){ const open = p.style.display!=="none"; p.style.display = open?"none":"block"; b.textContent = open?"Lineups ▾":"Lineups ▴"; }
+  if(p){ const open = p.style.display!=="none"; p.style.display = open?"none":"block";
+    b.textContent = _luLabel(b.dataset.lu)+(open?" ▾":" ▴");
+    OPEN["lu-"+b.dataset.lu] = open?undefined:1; }
 });
 if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("/sw.js").catch(function(){});});}
 load();
