@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v38 · 2026-06-14 (narrow stats+fixtures, read-only scores, player/country search)";
+const VERSION = "v40 · 2026-06-14 (match centre side-by-side combined view)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -1150,10 +1150,13 @@ const PAGE = String.raw`<!DOCTYPE html>
   .fd-w{background:var(--advance);color:#04210f}.fd-d{background:#6b7280}.fd-l{background:var(--live)}
   .fd-none{color:var(--faint)}
   /* Scenarios */
-  .scen{margin:8px 4px 2px;border-top:1px solid var(--line)}
-  .scen summary{cursor:pointer;font:800 11px Oswald,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--c2);padding:9px 2px;list-style:none}
+  .scen{margin:10px 4px 2px}
+  .scen summary{cursor:pointer;font:800 11px Oswald,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--c2);
+    padding:8px 12px;list-style:none;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line2);
+    border-radius:8px;background:color-mix(in srgb,var(--ink) 6%,transparent);transition:.15s}
+  .scen summary:hover{color:var(--ink);border-color:var(--c2)}
   .scen summary::-webkit-details-marker{display:none}
-  .scen summary:before{content:"▸";margin-right:7px;display:inline-block;transition:transform .15s}
+  .scen summary:before{content:"\25B8";display:inline-block;transition:transform .15s}
   .scen[open] summary:before{transform:rotate(90deg)}
   .scrow{display:flex;align-items:flex-start;gap:8px;padding:6px 2px;font-size:13px;line-height:1.45}
   .scrow .sicon{flex:0 0 auto;font-weight:800;width:14px;text-align:center}
@@ -1254,9 +1257,13 @@ const PAGE = String.raw`<!DOCTYPE html>
     letter-spacing:.03em;vertical-align:middle;white-space:nowrap;
     color:#1a1206;background:linear-gradient(90deg,var(--gold),#ffe39a);border:1px solid color-mix(in srgb,var(--gold) 60%,#000)}
   .gbnote{font-size:11.5px;color:var(--muted);margin:0 2px 10px;display:flex;gap:6px;align-items:center}
-  .sc-row.expandable{cursor:pointer}
-  .sc-row.expandable .who .nm::after{content:"›";display:inline-block;margin-left:7px;color:var(--muted);transform:rotate(90deg);transition:transform .15s;font-weight:700}
+  .sc-row.expandable{cursor:pointer;transition:background .15s,border-color .15s}
+  .sc-row.expandable:hover{background:color-mix(in srgb,var(--ink) 5%,transparent);border-color:var(--line2)}
+  .sc-row.expandable .who .nm::after{content:"\203A";display:inline-flex;align-items:center;justify-content:center;
+    width:17px;height:17px;margin-left:8px;color:var(--muted);transform:rotate(90deg);transition:transform .15s,color .15s,border-color .15s;
+    font-weight:700;font-size:12px;border:1px solid var(--line2);border-radius:50%;line-height:1}
   .sc-row.expandable.open .who .nm::after{transform:rotate(-90deg)}
+  .sc-row.expandable:hover .who .nm::after{color:var(--ink);border-color:var(--c5)}
   .pdtl{margin:-2px 0 8px;padding:4px 6px 6px;display:flex;flex-direction:column;gap:4px}
   .pdrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;background:var(--card2,rgba(255,255,255,.03));font-size:12.5px}
   .pdrow .crest,.pdrow img{width:18px;height:18px}
@@ -1325,9 +1332,11 @@ const PAGE = String.raw`<!DOCTYPE html>
   .goals .gm{font-family:"Oswald";color:var(--pitch);font-size:11px;margin-right:2px}
   .goals .gd{color:var(--faint);font-size:10.5px}
   .goals .ga{color:var(--muted);font-size:10.5px}
-  .luBtn{margin-top:9px;font-family:"Oswald";font-size:11px;letter-spacing:.06em;color:var(--muted);
-    background:transparent;border:1px solid var(--line2);border-radius:7px;padding:5px 10px;cursor:pointer}
-  .luBtn:hover{color:var(--ink)}
+  .luBtn{margin-top:9px;font-family:"Oswald";font-size:11px;letter-spacing:.06em;color:var(--ink);
+    background:color-mix(in srgb,var(--ink) 7%,transparent);border:1px solid var(--line2);border-radius:8px;
+    padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.15s}
+  .luBtn:before{content:"\24D8";font-size:13px;color:var(--c5)}
+  .luBtn:hover{color:var(--ink);border-color:var(--c5);background:color-mix(in srgb,var(--c5) 14%,transparent)}
   .luPanel{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .luPanel .xi{font-size:11.5px;color:var(--muted)}
   .luPanel .xih{font-family:"Oswald";text-transform:uppercase;letter-spacing:.06em;color:var(--ink);font-size:11px;margin-bottom:5px}
@@ -1344,12 +1353,23 @@ const PAGE = String.raw`<!DOCTYPE html>
   .statRow span:first-child{text-align:left;font-family:"Oswald"}.statRow span:last-child{text-align:right;font-family:"Oswald"}
   .statRow .stT{text-align:center;color:var(--muted);font-size:11px}
   /* Match Center */
-  .mcSel{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:4px}
-  .mcTab{flex:none;display:flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--line);
-    border-radius:999px;padding:7px 13px;cursor:pointer;color:var(--muted);font-size:12.5px;white-space:nowrap}
-  .mcTab.on{border-color:var(--c5);color:var(--ink);box-shadow:0 0 0 1px var(--c5)}
-  .mcTab .fl{font-size:15px}
-  .mcTab .mcTag{font-family:"Oswald";font-size:10px;color:var(--faint);margin-left:3px}
+  .mcSel{margin-bottom:6px}
+  .mcPickWrap{position:relative;max-width:540px;margin:0 auto}
+  .mcPickWrap:after{content:"▾";position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;font-size:13px}
+  .mcPick{width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line2);color:var(--ink);border-radius:10px;
+    padding:11px 36px 11px 14px;font-size:14px;font-family:inherit;outline:none}
+  .mcPick:hover{border-color:var(--c5)}
+  .mcPick:focus{border-color:var(--c5);box-shadow:0 0 0 2px color-mix(in srgb,var(--c5) 30%,transparent)}
+  .mcSeg{justify-content:center;max-width:540px;margin:14px auto 2px}
+  .mcGrid{display:grid;gap:18px;align-items:start;grid-template-columns:1fr;max-width:1040px;margin:16px auto 0}
+  .mcSide{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .mcCol{min-width:0}
+  .mcCol .pitch{max-width:100%;margin:0 auto}
+  .mcCol .mcDetail,.mcCol .tlWrap{max-width:none;margin:0}
+  .mcColT{font:800 11px Oswald,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--c2);text-align:center;margin:0 0 10px}
+  @media(min-width:700px){ .mcGrid{grid-template-columns:minmax(0,1.08fr) minmax(0,1fr)} }
+  @media(min-width:1040px){ .mcGrid{grid-template-columns:minmax(0,1.08fr) minmax(0,1fr) minmax(0,0.92fr)} .mcSide{display:contents} }
   .mcHead{display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:10px;margin:10px 0 2px;max-width:540px;margin-left:auto;margin-right:auto}
   .mcTeam{display:flex;flex-direction:column;align-items:center;gap:3px;font-family:"Oswald";font-size:14px;color:var(--ink);text-align:center}
   .mcTeam .fl{font-size:30px;line-height:1}
@@ -1453,7 +1473,7 @@ const PAGE = String.raw`<!DOCTYPE html>
 
 <script>
 const $ = s => document.querySelector(s);
-let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals", STAT_Q = "";
+let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals", STAT_Q = "", MC_PANEL = "all";
 
 let lastScores = {};   // matchId -> "h-a", to detect changes between polls
 let changedIds = {};   // ids whose score changed on the latest poll
@@ -2155,15 +2175,36 @@ function mcBodyHtml(m){
     '<div class="mcScore"><div class="mcSc">'+(r?('<b>'+r.home+'</b><span>:</span><b>'+r.away+'</b>'):'<span class="vsd">vs</span>')+'</div><div class="mcStatus">'+status+'</div></div>'+
     '<div class="mcTeam">'+crest(m.away,"big")+'<span>'+esc(m.away)+'</span>'+(af?'<span class="mcForm">'+esc(af)+'</span>':'')+'</div>'+
   '</div>';
-  let detail='';
-  detail += mcTimeline(ex, m);
-  if(ex.stats&&ex.stats.length){ detail+='<div class="statPanel" style="margin-top:12px">'+
-    '<div class="statHd"><span>'+esc(m.home)+'</span><span></span><span>'+esc(m.away)+'</span></div>'+
-    ex.stats.map(function(st){ return '<div class="statRow"><span>'+esc(st.home)+'</span><span class="stT">'+esc(st.type)+'</span><span>'+esc(st.away)+'</span></div>'; }).join("")+'</div>'; }
-  return head+mcPitch(ex.lineups.home, ex.lineups.away, ex, m)+(detail?'<div class="mcDetail">'+detail+'</div>':'');
+  const hasTL = !!((ex.scorers&&ex.scorers.length)||(ex.cards&&ex.cards.length)||(ex.subs&&ex.subs.length));
+  const hasStats = !!(ex.stats&&ex.stats.length);
+  const statsHtml = hasStats ? ('<div class="statPanel">'+
+      '<div class="statHd"><span>'+esc(m.home)+'</span><span></span><span>'+esc(m.away)+'</span></div>'+
+      ex.stats.map(function(st){ return '<div class="statRow"><span>'+esc(st.home)+'</span><span class="stT">'+esc(st.type)+'</span><span>'+esc(st.away)+'</span></div>'; }).join("")+
+      '</div>') : '';
+  const segs=[];
+  if(hasTL||hasStats) segs.push(["all","All"]);
+  segs.push(["pitch","Formation"]);
+  if(hasTL) segs.push(["timeline","Timeline"]);
+  if(hasStats) segs.push(["stats","Match stats"]);
+  if(!segs.find(s=>s[0]===MC_PANEL)) MC_PANEL=segs[0][0];
+  const seg = segs.length>1 ? '<div class="mcSeg seg">'+segs.map(s=>'<button data-mcp="'+s[0]+'" class="'+(MC_PANEL===s[0]?"active":"")+'">'+s[1]+'</button>').join("")+'</div>' : '';
+  let panel;
+  if(MC_PANEL==="all" && (hasTL||hasStats)){
+    panel='<div class="mcGrid">'+
+      '<div class="mcCol"><div class="mcColT">Formation</div>'+mcPitch(ex.lineups.home, ex.lineups.away, ex, m)+'</div>'+
+      ((hasTL||hasStats)?'<div class="mcSide">'+
+        (hasTL?'<div class="mcCol"><div class="mcColT">Timeline</div>'+mcTimeline(ex,m,true)+'</div>':'')+
+        (hasStats?'<div class="mcCol"><div class="mcColT">Match stats</div>'+statsHtml+'</div>':'')+
+      '</div>':'')+
+    '</div>';
+  }
+  else if(MC_PANEL==="timeline" && hasTL) panel='<div class="mcDetail">'+mcTimeline(ex,m)+'</div>';
+  else if(MC_PANEL==="stats" && hasStats) panel='<div class="mcDetail">'+statsHtml+'</div>';
+  else panel=mcPitch(ex.lineups.home, ex.lineups.away, ex, m);
+  return head+seg+panel;
 }
 // Chronological match timeline: goals ⚽, cards 🟨🟥, subs 🔁 — home on the left, away on the right.
-function mcTimeline(ex, m){
+function mcTimeline(ex, m, bare){
   const E=[];
   const mn=v=>{ const s=String(v||"").replace(/[^0-9+]/g,""); const p=s.split("+"); return (parseInt(p[0]||"0",10)||0)+(p[1]?(parseInt(p[1],10)||0)/100:0); };
   const lab=v=>esc(String(v||"").replace(/'/g,""))+"'";
@@ -2175,7 +2216,7 @@ function mcTimeline(ex, m){
     t:'🔁 '+esc(s.on||'')+(s.off?' <span class="tgd">'+esc(s.off)+' ↓</span>':'')}));
   if(!E.length) return '';
   E.sort((a,b)=>a.n-b.n);
-  return '<div class="tlWrap"><div class="tlTitle">Match timeline</div><div class="tl">'+E.map(e=>
+  return '<div class="tlWrap">'+(bare?'':'<div class="tlTitle">Match timeline</div>')+'<div class="tl">'+E.map(e=>
     '<div class="tlr '+e.s+'"><div class="tlc h">'+(e.s==="h"?e.t:'')+'</div>'+
     '<div class="tlm">'+lab(e.m)+'</div><div class="tlc a">'+(e.s==="a"?e.t:'')+'</div></div>').join("")+'</div></div>';
 }
@@ -2267,13 +2308,14 @@ function renderMatchCenter(){
   const rank=m=>matchPhase(m)==="live"?0:1;
   list.sort((a,b)=> rank(a)-rank(b) || (new Date(b.kickoff)-new Date(a.kickoff)));
   if(!MC_MATCH || !list.find(m=>m.id===MC_MATCH)) MC_MATCH=list[0].id;
-  elS.innerHTML=list.map(function(m){ const ph=matchPhase(m);
-    const tag=ph==="live"?liveMinute(m):ph==="done"?"FT":m.time.replace(" ET","");
-    return '<button class="mcTab '+(m.id===MC_MATCH?"on":"")+'" data-mc="'+m.id+'">'+
-      '<span class="fl">'+flagOf(m.home)+'</span> '+esc(m.home)+' v '+esc(m.away)+' <span class="fl">'+flagOf(m.away)+'</span>'+
-      '<span class="mcTag">'+tag+'</span></button>'; }).join("");
-  elS.querySelectorAll("[data-mc]").forEach(b=>b.onclick=()=>{ MC_MATCH=b.dataset.mc; renderMatchCenter(); });
+  elS.innerHTML='<div class="mcPickWrap"><select id="mcPick" class="mcPick">'+list.map(function(m){ const ph=matchPhase(m);
+    const tag=ph==="live"?("LIVE "+liveMinute(m)):ph==="done"?"FT":m.time.replace(" ET","");
+    const sc=m.result?("  "+m.result.home+"–"+m.result.away):"";
+    return '<option value="'+m.id+'"'+(m.id===MC_MATCH?" selected":"")+'>'+
+      esc(m.home)+" v "+esc(m.away)+"   ·   "+esc(tag)+esc(sc)+'</option>'; }).join("")+'</select></div>';
+  const sel=$("#mcPick"); if(sel) sel.onchange=()=>{ MC_MATCH=sel.value; MC_PANEL="all"; renderMatchCenter(); };
   elB.innerHTML=mcBodyHtml(list.find(x=>x.id===MC_MATCH));
+  elB.querySelectorAll("[data-mcp]").forEach(b=> b.onclick=()=>{ MC_PANEL=b.dataset.mcp; renderMatchCenter(); });
 }
 function renderVenues(){
   const counts={};
