@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v44 · 2026-06-14 (standings: inline badges everywhere, two groups across on laptop)";
+const VERSION = "v48 · 2026-06-14 (standings: icon-only badges, no words)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -1081,8 +1081,7 @@ const PAGE = String.raw`<!DOCTYPE html>
 
   /* Group tables */
   .groups{display:grid;grid-template-columns:1fr;gap:18px}
-  @media(min-width:780px){ .groups{grid-template-columns:1fr 1fr} }
-  @media(min-width:1500px){ .groups{grid-template-columns:1fr 1fr 1fr} }
+  @media(min-width:1300px){ .groups{grid-template-columns:1fr 1fr} }
   .group{position:relative;background:linear-gradient(180deg,var(--panel),var(--panel2));
     border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);
     --acc:var(--c4)}
@@ -1102,7 +1101,7 @@ const PAGE = String.raw`<!DOCTYPE html>
   thead th{font-family:"Oswald";font-weight:500;text-transform:uppercase;letter-spacing:.08em;
     font-size:10.5px;color:var(--faint);text-align:center;padding:9px 4px}
   thead th.tl{text-align:left;padding-left:18px}
-  tbody td{padding:9px 3px;text-align:center;font-size:13.5px;border-top:1px solid var(--line)}
+  tbody td{padding:9px 4px;text-align:center;font-size:13.5px;border-top:1px solid var(--line)}
   tbody td.tl{text-align:left;padding-left:14px;font-weight:700}
   tbody td.pts{font-family:"Oswald";font-weight:700;font-size:16px}
   .teamcell{display:flex;align-items:center;gap:9px}
@@ -1118,12 +1117,9 @@ const PAGE = String.raw`<!DOCTYPE html>
   .qtag{display:inline-block;font:800 9.5px/1.4 Oswald,sans-serif;letter-spacing:.5px;padding:1px 5px;border-radius:5px;margin-left:6px;vertical-align:middle}
   .qtag.qin{background:var(--advance);color:#04210f}
   .qtag.qout{background:var(--out);color:#fff;opacity:.85}
-  .teamcell .tnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:170px}
-  .tcwrap{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;min-width:0;gap:0}
-  .tcrow{display:flex;align-items:center;min-width:0}
-  .tbdgs{display:flex;gap:4px;align-items:center;margin-left:5px}
-  .tbdg{font-size:12px;line-height:1;cursor:default}
-  .tcrow .qtag{margin-left:6px}
+  .teamcell .tnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:150px}
+  .tbdgs{display:inline-flex;gap:3px;align-items:center;margin-left:5px;flex:none}
+  .tbdg{font-size:13px;line-height:1;cursor:default}
   .mini{font:700 11px Mulish,sans-serif;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:3px 9px;border-radius:999px;cursor:pointer;margin-left:8px}
   .mini:hover{background:rgba(255,255,255,.16)}
   .mini.on{background:var(--advance);border-color:transparent;color:#04210f}
@@ -1190,7 +1186,6 @@ const PAGE = String.raw`<!DOCTYPE html>
   @media(max-width:560px){
     .group th:nth-child(6),.group td:nth-child(6),
     .group th:nth-child(7),.group td:nth-child(7){display:none} /* hide GF/GA, keep GD/Pts/Form */
-    .teamcell .tnm{max-width:54vw}
     .fd{width:14px;height:14px;line-height:14px}
     .scrow .snm{min-width:80px}
   }
@@ -1444,7 +1439,7 @@ const PAGE = String.raw`<!DOCTYPE html>
       <span><i class="lg-may"></i> 3rd — may advance (8 best third-placed)</span>
       <span><i class="lg-out"></i> Eliminated</span>
       <span><span class="qtag qin">Q</span> Clinched a spot &nbsp; <span class="qtag qout">OUT</span> Out (confirmed)</span>
-      <span style="color:var(--muted)">👑 Group winner · 💯 Won all 3 · 🔥 Best attack · 🧱 Fewest conceded <span style="color:var(--faint)">(shown once a group is decided)</span></span>
+      <span style="color:var(--muted)">👑 Group winner · 💯 Won all 3 · 🔥 Best attack · 🧱 Fewest conceded</span>
       <span style="color:var(--faint)">Order: Points → Goal difference → Goals for</span>
     </div>
   </section>
@@ -1969,11 +1964,9 @@ function renderGroups(){
         rows.map(r=>
           '<tr class="'+(r.status||"")+'">'+
             '<td class="tl"><div class="teamcell"><span class="pos">'+r.pos+'</span>'+
-              crest(r.team)+
-              '<div class="tcwrap"><div class="tcrow"><span class="tnm" title="'+esc(r.team)+'">'+r.team+'</span>'+
+              crest(r.team)+'<span class="tnm">'+r.team+'</span>'+
               (r.qual==="in"?'<span class="qtag qin" title="Qualified for the Round of 32">Q</span>'
                :r.qual==="out"?'<span class="qtag qout" title="Eliminated — cannot reach the Round of 32">OUT</span>':'')+
-              '</div>'+
               (function(){ const tb=[];
                 if(groupComplete && r.pos===1) tb.push(["👑","Group winner"]);
                 if(r.W===3) tb.push(["💯","Perfect run"]);
@@ -1981,7 +1974,6 @@ function renderGroups(){
                 if(groupComplete && r.GA===minGA) tb.push(["🧱","Wall"]);
                 const ic=tb.map(b=>'<span class="tbdg" title="'+b[1]+'">'+b[0]+'</span>').join("");
                 return ic?'<span class="tbdgs">'+ic+'</span>':''; })()+
-              '</div>'+
             '</div></td>'+
             '<td>'+r.P+'</td><td>'+r.W+'</td><td>'+r.D+'</td><td>'+r.L+'</td>'+
             '<td>'+r.GF+'</td><td>'+r.GA+'</td><td>'+(r.GD>0?"+":"")+r.GD+'</td>'+
