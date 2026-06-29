@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT, SEED_EXTRA } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v51 · 2026-06-28 (debug now reports frozen snapshot: seededExtra/liveExtra counts)";
+const VERSION = "v52 · 2026-06-28 (full knockout bracket: R16–Final fixtures + live bracket tree)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -290,12 +290,44 @@ function scenarioFor(rows, rem, team) {
   return msg;
 }
 
+// Resolve knockout feeder tokens (W74 = winner of match 74, L101 = loser of 101)
+// into real team names once the feeding match has a decisive result. Draws stay
+// unresolved (penalty shoot-outs aren't captured by the free score feeds).
+function resolveBracket(ms){
+  const byId = {}; ms.forEach(m => byId[m.id] = m);
+  const tok = /^([WL])(\d+)$/;
+  const decide = (num) => {
+    const m = byId["M" + num];
+    if (!m || !m.result) return { w:null, l:null };
+    if (tok.test(m.home) || tok.test(m.away)) return { w:null, l:null }; // feeders not resolved yet
+    const r = m.result;
+    if (r.home > r.away) return { w:m.home, l:m.away };
+    if (r.away > r.home) return { w:m.away, l:m.home };
+    return { w:null, l:null }; // level after 90/120' — decided on penalties we don't have
+  };
+  for (let pass = 0; pass < 8; pass++) {
+    let changed = false;
+    for (const m of ms) {
+      for (const side of ["home", "away"]) {
+        const mm = tok.exec(m[side] || "");
+        if (mm) {
+          const d = decide(+mm[2]);
+          const rep = mm[1] === "W" ? d.w : d.l;
+          if (rep) { m[side] = rep; changed = true; }
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  return ms;
+}
+
 function buildState() {
   return {
     tournament: TOURNAMENT,
     version: VERSION,
     groups: GROUPS,
-    matches: MATCHES.map(m => ({ ...m, result: results[m.id] || null })),
+    matches: resolveBracket(MATCHES.map(m => ({ ...m, result: results[m.id] || null }))),
     standings: computeStandings(),
     scorers,
     liveInfo,
@@ -1152,7 +1184,14 @@ const PAGE = String.raw`<!DOCTYPE html>
   .bteam.prov{font-style:italic;color:var(--faint);font-weight:600}
   .bteam .pdot{width:6px;height:6px;border-radius:50%;background:var(--maybe);display:inline-block;flex:0 0 auto}
   .bslot{font-size:12px;color:var(--faint)}
-  @media(max-width:640px){ .bcol{width:188px} .bteam .bnm{max-width:118px} }
+  .brow .bnm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;font-weight:700;font-size:13px;flex:1 1 auto}
+  .brow .bsc{font-family:Oswald,sans-serif;font-weight:800;font-size:14px;margin-left:auto;padding-left:8px;flex:0 0 auto}
+  .brow.bwin .bnm{color:var(--ink)} .brow.bwin .bsc{color:var(--advance)}
+  .brow.blose{opacity:.5}
+  .brow.tbdrow .bnm{color:var(--faint);font-weight:600;font-style:italic}
+  .bmatch.blive{border-color:var(--live);box-shadow:0 0 0 1px var(--live)}
+  .crest.tbd{opacity:.45;font-weight:800}
+  @media(max-width:640px){ .bcol{width:188px} .bteam .bnm{max-width:118px} .brow .bnm{max-width:108px} }
   /* Form guide */
   .fcol{text-align:center}
   .formdots{display:inline-flex;gap:3px;justify-content:center}
@@ -1486,6 +1525,15 @@ const PAGE = String.raw`<!DOCTYPE html>
 const $ = s => document.querySelector(s);
 let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals", STAT_Q = "", MC_PANEL = "all";
 function isKO(g){ return !/^[A-L]$/.test(g||""); }
+function isFeeder(s){ return /^[WL]\d+$/.test(s||""); }
+function feederLabel(s){
+  const mm=/^([WL])(\d+)$/.exec(s||""); if(!mm) return s;
+  const m=(STATE.matches||[]).find(x=>x.id==="M"+mm[2]);
+  if(m && !isFeeder(m.home) && !isFeeder(m.away)) return m.home+" / "+m.away;
+  return (mm[1]==="W"?"Winner M":"Loser M")+mm[2];
+}
+function koTeam(name){ return isFeeder(name) ? feederLabel(name) : name; }
+function koCrest(name){ return isFeeder(name) ? '<span class="crest isflag tbd">·</span>' : crest(name); }
 function roundName(g){ return g==="R32"?"Round of 32":g==="R16"?"Round of 16":g==="QF"?"Quarter-final":g==="SF"?"Semi-final":g==="F"?"Final":g==="3P"?"Third place":g; }
 function grpTag(g){ return isKO(g) ? roundName(g) : ("GRP "+g); }
 
@@ -1943,9 +1991,9 @@ function renderToday(){
       return '<div class="tcard '+(ph==="live"?"live":"")+(ph==="done"?" done":"")+'" data-mid="'+m.id+'">'+
         '<span class="gtag">'+tag+'</span>'+
         '<div class="when">'+m.date.slice(5)+' · '+m.time+' · '+m.city+'</div>'+
-        '<div class="row"><span class="tnm2">'+crest(m.home)+m.home+'</span>'+sc+'</div>'+
+        '<div class="row"><span class="tnm2">'+koCrest(m.home)+koTeam(m.home)+'</span>'+sc+'</div>'+
         '<div class="vs">vs</div>'+
-        '<div class="row"><span class="tnm2">'+crest(m.away)+m.away+'</span>'+sa+'</div>'+
+        '<div class="row"><span class="tnm2">'+koCrest(m.away)+koTeam(m.away)+'</span>'+sa+'</div>'+
         (function(){ const mb=matchBadges(m); return mb.length?'<div class="cbdg">'+bdgChips(mb)+'</div>':''; })()+
         cardExtras(m)+
       '</div>';
@@ -2038,13 +2086,13 @@ function renderFixtures(){
           '<div class="gp">'+(isKO(m.group)?'<b>'+m.group+'</b>':'GRP <b>'+m.group+'</b>')+'</div>'+
           '<div class="time">'+(ph==="live"?liveTag:m.time.replace(" ET",""))+'</div>'+
           '<div class="match">'+
-            '<div class="side h"><span class="nm '+(hw?"win":"")+'">'+m.home+'</span>'+crest(m.home)+'</div>'+
+            '<div class="side h"><span class="nm '+(hw?"win":"")+'">'+koTeam(m.home)+'</span>'+koCrest(m.home)+'</div>'+
             '<div class="score">'+
               '<span class="scv '+(hw?"win":"")+'">'+(r?r.home:"–")+'</span>'+
               '<span class="sep">:</span>'+
               '<span class="scv '+(aw?"win":"")+'">'+(r?r.away:"–")+'</span>'+
             '</div>'+
-            '<div class="side a">'+crest(m.away)+'<span class="nm '+(aw?"win":"")+'">'+m.away+'</span></div>'+
+            '<div class="side a">'+koCrest(m.away)+'<span class="nm '+(aw?"win":"")+'">'+koTeam(m.away)+'</span></div>'+
           '</div>'+
           '<div class="venue"><b>'+m.stadium+'</b>'+m.city+'</div>'+
           (function(){ const mb=matchBadges(m); return mb.length?'<div class="cbdg">'+bdgChips(mb)+'</div>':''; })()+
@@ -2280,39 +2328,39 @@ const BRACKET = [
     {id:103, a:{t:"l",m:101}, b:{t:"l",m:102}, v:"3rd place · Miami", small:true}
   ]}
 ];
-function bSlot(s){
-  if(s.t==="w" || s.t==="ru"){
-    const rows = (STATE.standings && STATE.standings[s.g]) || [];
-    const lbl = (s.t==="w" ? "Winner " : "Runner-up ") + s.g;
-    if(rows.length){
-      const done = rows.every(r=>r.P>=3), played = rows.some(r=>r.P>0);
-      const tm = rows[s.t==="w"?0:1];
-      if(played && tm){
-        return '<span class="bteam '+(done?"fin":"prov")+'" title="'+(done?esc(tm.team):"Provisional — "+lbl+" (group not finished)")+'">'+
-          crest(tm.team)+'<span class="bnm">'+esc(tm.team)+'</span>'+(done?'':'<i class="pdot"></i>')+'</span>';
-      }
-    }
-    return '<span class="bslot">'+lbl+'</span>';
-  }
-  if(s.t==="3") return '<span class="bslot">3rd · '+esc(s.g)+'</span>';
-  if(s.t==="m") return '<span class="bslot">Winner M'+s.m+'</span>';
-  if(s.t==="l") return '<span class="bslot">Loser M'+s.m+'</span>';
-  return '<span class="bslot">TBD</span>';
+function bracketSlotName(name){
+  // compact label for the narrow bracket: real team, or "Winner M##"/"Loser M##"
+  const mm=/^([WL])(\d+)$/.exec(name||"");
+  if(mm) return (mm[1]==="W"?"Winner M":"Loser M")+mm[2];
+  return name;
+}
+function bRow(name, score, win, lose){
+  const tbd = isFeeder(name);
+  return '<div class="brow'+(win?" bwin":"")+(lose?" blose":"")+(tbd?" tbdrow":"")+'">'+
+    (tbd?'<span class="crest isflag tbd">·</span>':crest(name))+
+    '<span class="bnm" title="'+esc(bracketSlotName(name))+'">'+esc(bracketSlotName(name))+'</span>'+
+    (score!=null?'<span class="bsc">'+score+'</span>':'')+
+  '</div>';
 }
 function renderBracket(){
-  const anyComplete = Object.values(STATE.standings||{}).some(rows=>rows.length&&rows.every(r=>r.P>=3));
+  const byId={}; (STATE.matches||[]).forEach(m=>byId[m.id]=m);
   $("#bracketNote").innerHTML =
-    'The full path to the MetLife final. Group winners &amp; runners-up fill in as each group is decided '+
-    '(<span class="bteam prov" style="display:inline-flex"><i class="pdot"></i></span> = provisional while the group is still being played). '+
-    'The eight best third-placed teams are slotted by FIFA\u2019s Annex C table once all groups finish on June 27.';
+    'The full knockout path to the MetLife final on July 19. Round of 32 fills in with live scores; '+
+    'each winner advances automatically into the next round once a match is decided. '+
+    'Slots still read \u201cWinner M##\u201d until that game finishes (penalty shoot-outs are filled in once the feed reports a result).';
   $("#bracket").innerHTML = BRACKET.map(col=>
     '<div class="bcol"><h4>'+col.r+'</h4>'+
-      col.ms.map(m=>
-        '<div class="bmatch'+(m.small?" small":"")+'">'+
-          '<div class="bmnum">M'+m.id+' · '+esc(m.v)+'</div>'+
-          '<div class="brow">'+bSlot(m.a)+'</div>'+
-          '<div class="brow">'+bSlot(m.b)+'</div>'+
-        '</div>').join("")+
+      col.ms.map(slot=>{
+        const m=byId["M"+slot.id];
+        if(!m) return '';
+        const r=m.result, ph=matchPhase(m);
+        const hw=r&&r.home>r.away, aw=r&&r.away>r.home;
+        return '<div class="bmatch'+(slot.small?" small":"")+(ph==="live"?" blive":"")+'">'+
+          '<div class="bmnum">M'+slot.id+' · '+esc(m.city||slot.v||"")+(ph==="live"?' · <b style="color:var(--live)">LIVE</b>':'')+'</div>'+
+          bRow(m.home, r?r.home:null, hw, !!r&&aw)+
+          bRow(m.away, r?r.away:null, aw, !!r&&hw)+
+        '</div>';
+      }).join("")+
     '</div>').join("");
 }
 
