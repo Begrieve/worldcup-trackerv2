@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT, SEED_EXTRA } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v52 · 2026-06-28 (full knockout bracket: R16–Final fixtures + live bracket tree)";
+const VERSION = "v53 · 2026-06-29 (flags: use flag images, not Windows-broken emoji)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -2104,21 +2104,38 @@ function renderFixtures(){
 }
 
 const FLAGCACHE = {};
+// Map every team to its flag-image code (flagcdn.com). Country-flag *emoji* don't
+// render on Windows, so we use real flag images and keep the emoji only as a last resort.
+const FLAG_ISO = {
+  "Mexico":"mx","South Africa":"za","South Korea":"kr","Czechia":"cz","Canada":"ca",
+  "Bosnia & Herzegovina":"ba","Qatar":"qa","Switzerland":"ch","Brazil":"br","Morocco":"ma",
+  "Haiti":"ht","Scotland":"gb-sct","USA":"us","Paraguay":"py","Australia":"au","Türkiye":"tr",
+  "Germany":"de","Curaçao":"cw","Ivory Coast":"ci","Ecuador":"ec","Netherlands":"nl","Japan":"jp",
+  "Tunisia":"tn","Sweden":"se","Belgium":"be","Egypt":"eg","Iran":"ir","New Zealand":"nz",
+  "Spain":"es","Cape Verde":"cv","Saudi Arabia":"sa","Uruguay":"uy","France":"fr","Senegal":"sn",
+  "Iraq":"iq","Norway":"no","Argentina":"ar","Algeria":"dz","Austria":"at","Jordan":"jo",
+  "Portugal":"pt","DR Congo":"cd","Uzbekistan":"uz","Colombia":"co","England":"gb-eng",
+  "Croatia":"hr","Ghana":"gh","Panama":"pa"
+};
+function flagCdn(team){ const c=FLAG_ISO[team]; return c ? "https://flagcdn.com/w40/"+c+".png" : ""; }
 function flagOf(team){
   if(FLAGCACHE[team]!==undefined) return FLAGCACHE[team];
   for(const g of Object.keys(STATE.standings))
     for(const r of STATE.standings[g]) if(r.team===team){ FLAGCACHE[team]=r.flag; return r.flag; }
   return "";
 }
-// Real crest if the feed has supplied one, otherwise the flag emoji.
-// If the image fails to load (e.g. offline), it swaps back to the flag.
+// Prefer a feed-supplied crest, then a flag image (works on Windows), then the emoji.
 function crest(team, cls){
   const fl = flagOf(team);
-  const url = STATE.badges && STATE.badges[team];
-  if(url){
-    return '<span class="crest '+(cls||"")+'" data-fb="'+esc(fl)+'">'+
-      '<img src="'+esc(url)+'" alt="" loading="lazy" '+
-      'onerror="var p=this.parentNode;p.textContent=p.getAttribute(\'data-fb\');p.classList.add(\'isflag\')"></span>';
+  const feed = STATE.badges && STATE.badges[team];
+  const cdn = flagCdn(team);
+  const src = feed || cdn;
+  if(src){
+    return '<span class="crest '+(cls||"")+'" data-fb="'+esc(fl)+'" data-cdn="'+esc(cdn)+'">'+
+      '<img src="'+esc(src)+'" alt="" loading="lazy" '+
+      'onerror="var p=this.parentNode,c=p.getAttribute(\'data-cdn\');'+
+        'if(c&&this.getAttribute(\'src\')!==c){this.src=c;}'+
+        'else{p.textContent=p.getAttribute(\'data-fb\');p.classList.add(\'isflag\');}"></span>';
   }
   return '<span class="crest '+(cls||"")+' isflag">'+fl+'</span>';
 }
