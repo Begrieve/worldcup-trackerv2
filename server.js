@@ -13,10 +13,10 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { FLAGS, GROUPS, MATCHES, TOURNAMENT } = require("./data");
+const { FLAGS, GROUPS, MATCHES, TOURNAMENT, SEED_EXTRA } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v48 · 2026-06-14 (standings: icon-only badges, no words)";
+const VERSION = "v51 · 2026-06-28 (debug now reports frozen snapshot: seededExtra/liveExtra counts)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -160,6 +160,7 @@ function computeStandings() {
     if (!r || r.home == null || r.away == null) continue;
     const hs = Number(r.home), as = Number(r.away);
     if (Number.isNaN(hs) || Number.isNaN(as)) continue;
+    if (!tables[m.group]) continue;            // skip knockout matches (no group table)
     const H = tables[m.group][m.home], A = tables[m.group][m.away];
     if (!H || !A) continue;
     H.P++; A.P++;
@@ -189,7 +190,7 @@ function computeStandings() {
   for (const m of MATCHES) {
     const r = results[m.id];
     const done = r && r.home != null && r.away != null && !Number.isNaN(Number(r.home)) && !Number.isNaN(Number(r.away));
-    if (!done) remByGroup[m.group].push(m);
+    if (!done && remByGroup[m.group]) remByGroup[m.group].push(m);
   }
   for (const g of Object.keys(out)) {
     const rows = out[g], n = rows.length;
@@ -298,7 +299,7 @@ function buildState() {
     standings: computeStandings(),
     scorers,
     liveInfo,
-    matchExtra,
+    matchExtra: { ...matchExtra, ...(SEED_EXTRA || {}) },  // frozen group-stage detail wins for M01–M66; live fills the rest
     afStatus,
     tsdbStatus,
     apifcStatus,
@@ -877,11 +878,17 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/api/debug" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json" });
+    const mergedExtra = { ...matchExtra, ...(SEED_EXTRA || {}) };
+    const liveExtraCount = Object.keys(matchExtra).length;
+    const seededCount = Object.keys(SEED_EXTRA || {}).length;
     return res.end(JSON.stringify({ afStatus, tsdbStatus, tsdbMapped: Object.keys(tsdbEventMap).length,
       tsdbDebug, apifcStatus, apifcDebug, apifcTopDebug,
       scorersCount: scorers.length,
       mappedFixtures: Object.keys(afFixtureMap).length,
-      sampleExtra: Object.fromEntries(Object.entries(matchExtra).slice(0,3)), liveInfo }, null, 2));
+      seededExtra: seededCount,           // frozen group-stage games baked into the app (should be 66)
+      liveExtra: liveExtraCount,          // per-match detail currently coming from live feeds
+      totalExtra: Object.keys(mergedExtra).length,
+      sampleExtra: Object.fromEntries(Object.entries(mergedExtra).slice(0,3)), liveInfo }, null, 2));
   }
   if (url.pathname === "/api/state" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -1478,6 +1485,9 @@ const PAGE = String.raw`<!DOCTYPE html>
 <script>
 const $ = s => document.querySelector(s);
 let STATE = null, VIEW = "standings", GROUP_FILTER = "ALL", MC_MATCH = null, STAT_VIEW = "goals", STAT_Q = "", MC_PANEL = "all";
+function isKO(g){ return !/^[A-L]$/.test(g||""); }
+function roundName(g){ return g==="R32"?"Round of 32":g==="R16"?"Round of 16":g==="QF"?"Quarter-final":g==="SF"?"Semi-final":g==="F"?"Final":g==="3P"?"Third place":g; }
+function grpTag(g){ return isKO(g) ? roundName(g) : ("GRP "+g); }
 
 let lastScores = {};   // matchId -> "h-a", to detect changes between polls
 let changedIds = {};   // ids whose score changed on the latest poll
@@ -1929,7 +1939,7 @@ function renderToday(){
       const sc = m.result ? '<span class="sc">'+m.result.home+'</span>' : '<span class="sc">–</span>';
       const sa = m.result ? '<span class="sc">'+m.result.away+'</span>' : '<span class="sc">–</span>';
       const tag = ph==="live" ? ('<span class="livedot"></span>'+liveMinute(m))
-                : ph==="done" ? "FT" : ("GRP "+m.group);
+                : ph==="done" ? "FT" : grpTag(m.group);
       return '<div class="tcard '+(ph==="live"?"live":"")+(ph==="done"?" done":"")+'" data-mid="'+m.id+'">'+
         '<span class="gtag">'+tag+'</span>'+
         '<div class="when">'+m.date.slice(5)+' · '+m.time+' · '+m.city+'</div>'+
@@ -2001,7 +2011,7 @@ function renderFixtures(){
   const fb = $("#filter");
   if(!fb.dataset.built){
     fb.innerHTML = '<span class="lbl">Group</span>'+
-      ['ALL',...Object.keys(STATE.groups)].map(g=>
+      ['ALL',...Object.keys(STATE.groups), ...[...new Set(STATE.matches.map(m=>m.group))].filter(isKO)].map(g=>
         '<button data-g="'+g+'" class="'+(g==="ALL"?"active":"")+'">'+(g==="ALL"?"All":g)+'</button>').join("");
     fb.querySelectorAll("button").forEach(b=>b.onclick=()=>{
       GROUP_FILTER=b.dataset.g;
@@ -2025,7 +2035,7 @@ function renderFixtures(){
         const liveTag = ph==="live" ? '<span class="fxlive"><span class="livedot"></span>'+liveMinute(m)+'</span>' : '';
         const fxx = cardExtras(m,"fx"); const fxxHtml = fxx ? '<div class="fxx">'+fxx+'</div>' : '';
         return '<div class="fx '+(r?"played":"")+(ph==="live"?" islive":"")+'" data-mid="'+m.id+'">'+
-          '<div class="gp">GRP <b>'+m.group+'</b></div>'+
+          '<div class="gp">'+(isKO(m.group)?'<b>'+m.group+'</b>':'GRP <b>'+m.group+'</b>')+'</div>'+
           '<div class="time">'+(ph==="live"?liveTag:m.time.replace(" ET",""))+'</div>'+
           '<div class="match">'+
             '<div class="side h"><span class="nm '+(hw?"win":"")+'">'+m.home+'</span>'+crest(m.home)+'</div>'+
