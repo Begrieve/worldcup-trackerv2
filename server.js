@@ -16,7 +16,7 @@ const os = require("os");
 const { FLAGS, GROUPS, MATCHES, TOURNAMENT, SEED_EXTRA } = require("./data");
 
 const PORT = process.env.PORT || 3000;
-const VERSION = "v53 · 2026-06-29 (flags: use flag images, not Windows-broken emoji)";
+const VERSION = "v55 · 2026-07-01 (top scorers: full-tournament totals + name-matched breakdowns)";
 
 // Best-guess LAN IPv4 so phones on the same Wi-Fi can reach this server.
 function lanIP(){
@@ -1315,6 +1315,7 @@ const PAGE = String.raw`<!DOCTYPE html>
   .sc-row.expandable:hover .who .nm::after{color:var(--ink);border-color:var(--c5)}
   .pdtl{margin:-2px 0 8px;padding:4px 6px 6px;display:flex;flex-direction:column;gap:4px}
   .pdrow{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;background:var(--card2,rgba(255,255,255,.03));font-size:12.5px}
+  .pdrow.pdmore{background:transparent;color:var(--faint);font-style:italic;font-size:11.5px;padding:3px 10px}
   .pdrow .crest,.pdrow img{width:18px;height:18px}
   .pdrow .pdopp{font-weight:600}
   .pdrow .pdwhen{color:var(--muted);font-size:11px}
@@ -1749,15 +1750,24 @@ function statAgg(){
   }
   return {goals,assists,cards};
 }
+// Normalise a player name to surname+initial so the full-name leaderboard feed
+// ("Lionel Messi") lines up with the snapshot's short names ("L. Messi").
+function nameKey(n){
+  n=(n||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  n=n.replace(/[.\-']/g," ").replace(/\s+/g," ").trim();
+  const p=n.split(" ").filter(Boolean);
+  if(!p.length) return "";
+  return p[p.length-1]+"|"+(p[0][0]||"");
+}
 // Which matches a player scored in, and how many — mirrors statAgg's goal rule so totals match.
 function playerGoalBreakdown(raw, team){
   const ex=STATE.matchExtra||{}; const byId={}; (STATE.matches||[]).forEach(m=>byId[m.id]=m);
-  const out=[];
+  const key=nameKey(raw); const out=[];
   for(const id in ex){ const e=ex[id], mt=byId[id]; if(!mt) continue;
     const gs=[];
     (e.scorers||[]).forEach(g=>{
       const og=/o\.?g\.?|own goal/i.test((g.name||"")+" "+(g.detail||""));
-      if(!og && g.name===raw && g.team===team) gs.push({ minute:g.minute||"", pen:/pen/i.test(g.detail||"") });
+      if(!og && nameKey(g.name)===key && g.team===team) gs.push({ minute:g.minute||"", pen:/pen/i.test(g.detail||"") });
     });
     if(gs.length){
       const home = mt.home===team;
@@ -1820,17 +1830,20 @@ function renderScorers(){
   const seg='<div class="seg">'+tabs.map(t=>'<button data-stat="'+t[0]+'" class="'+(STAT_VIEW===t[0]?"active":"")+'">'+t[1]+'</button>').join("")+'</div>';
   let body='';
   if(STAT_VIEW==="goals"){
-    // Count goals from the actual match events (complete for the whole tournament after backfill),
-    // not the provider's stage-limited top-scorers endpoint.
-    const agg=statAgg();
-    let list=Object.values(agg.goals).map(g=>{ const a=agg.assists[g.name+"|"+g.team]; return {name:g.name,raw:g.name,team:g.team,v:g.v,assists:a?a.v:0}; });
-    if(list.length){
-      const roster=scorerRoster();
-      list.forEach(s=>{ s.name=prettyName(s.raw,s.team,roster); });
-      list.sort((a,b)=> b.v-a.v || b.assists-a.assists);
-    } else if(STATE.scorers&&STATE.scorers.length){   // fallback before match data has loaded
-      list=STATE.scorers.map(s=>({name:s.name,raw:s.name,team:s.team,v:s.goals,assists:s.assists||0}));
-    }
+    // Totals: take the higher of the full-tournament leaderboard feed and the recorded
+    // goal events, so knockout/late-group goals aren't lost and nothing is ever under-counted.
+    const agg=statAgg(); const roster=scorerRoster();
+    const byKey={};
+    Object.values(agg.goals).forEach(g=>{
+      const k=nameKey(g.name)+"|"+g.team; const a=agg.assists[g.name+"|"+g.team];
+      byKey[k]={ name:prettyName(g.name,g.team,roster), raw:g.name, team:g.team, v:g.v, assists:a?a.v:0 };
+    });
+    (STATE.scorers||[]).forEach(s=>{
+      const k=nameKey(s.name)+"|"+s.team; const ex=byKey[k];
+      if(ex){ ex.v=Math.max(ex.v, s.goals||0); ex.name=s.name; if(s.assists) ex.assists=Math.max(ex.assists, s.assists); }
+      else { byKey[k]={ name:s.name, raw:s.name, team:s.team, v:s.goals||0, assists:s.assists||0 }; }
+    });
+    let list=Object.values(byKey).filter(s=>s.v>0).sort((a,b)=> b.v-a.v || (b.assists||0)-(a.assists||0));
     body = list.length ? (function(){
       const top=list[0];
       const tied=list.filter(s=> s.v===top.v && (s.assists||0)===(top.assists||0)).length;
@@ -1846,6 +1859,10 @@ function renderScorers(){
           '<div class="stat"><div class="v">'+s.v+'</div><div class="k">Goals</div></div>',
           gbChip + bdgChips(playerBadges(s.raw, s.team)));
         if(!bd.length) return '<div class="sc-item" data-okey="sc:'+esc(s.raw)+'|'+esc(s.team)+'">'+row+'</div>';
+        const detailed = bd.reduce((a,g)=>a+g.n,0);
+        const gap = s.v - detailed;
+        const gapRow = gap>0 ? '<div class="pdrow pdmore"><span class="pdopp">+'+gap+' more goal'+(gap>1?'s':'')+'</span>'+
+          '<span class="pdwhen"></span><span class="pdmin"></span><span class="pdn">later rounds — no detailed data</span></div>' : '';
         const detail = '<div class="pdtl" hidden>'+ bd.map(g=>
           '<div class="pdrow">'+crest(g.opp)+
             '<span class="pdopp">'+(g.home?'vs ':'@ ')+esc(g.opp)+'</span>'+
@@ -1853,7 +1870,7 @@ function renderScorers(){
             '<span class="pdmin">'+g.goals.map(x=> esc(x.minute)+(x.pen?' <span class="pen">P</span>':'')).filter(Boolean).join(", ")+'</span>'+
             '<span class="pdn">'+g.n+(g.n>1?' goals':' goal')+(g.pens?' · '+g.pens+' pen':'')+'</span>'+
             (g.n>=3?'<span class="bdg">🎩 Hat-trick</span>':g.n===2?'<span class="bdg">⚽ Brace</span>':'')+
-          '</div>').join("") +'</div>';
+          '</div>').join("") + gapRow +'</div>';
         return '<div class="sc-item" data-okey="sc:'+esc(s.raw)+'|'+esc(s.team)+'">'+row+detail+'</div>';
       }).join("");
     })()
@@ -1954,8 +1971,13 @@ function cardExtras(m, ctx){
 function renderToday(){
   const isLive = m => matchPhase(m)==="live";
   // Board window: live now, kicking off within ~14h, OR finished within the last ~30h.
+  // "Today" in US Eastern (the tournament's reference clock), so every game dated
+  // today shows all day — not just those inside a rolling time window.
+  let todayET; try { todayET = new Date().toLocaleDateString('en-CA',{timeZone:'America/New_York'}); }
+  catch(e){ todayET = new Date(Date.now()-4*3600*1000).toISOString().slice(0,10); }
   let todays = STATE.matches.filter(m=>{
     if(isLive(m)) return true;
+    if(m.date===todayET) return true;            // all of today's fixtures, regardless of kickoff time
     const since = Date.now() - new Date(m.kickoff).getTime();
     return since >= -14*60*60*1000 && since <= 30*60*60*1000;
   });
